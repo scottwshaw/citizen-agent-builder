@@ -5,10 +5,11 @@ from datetime import datetime
 import json
 from dotenv import load_dotenv
 import os
-import openai
+from openai import AsyncOpenAI
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
@@ -26,15 +27,22 @@ class Agent(BaseModel):
 class ExecutionStep(BaseModel):
     type: str  # 'reasoning' | 'action' | 'observation'
     content: str
-    timestamp: datetime
+#    timestamp: datetime
+
+#    class Config:
+#        json_encoders = {
+#            datetime: lambda dt: dt.isoformat()
+#        }
+
 
 async def send_step(websocket: WebSocket, step_type: str, content: str):
     step = ExecutionStep(
         type=step_type,
         content=content,
-        timestamp=datetime.now()
+ #       timestamp=datetime.now()
     )
-    await websocket.send_json(step.dict())
+    print(step)
+    await websocket.send_json(step.model_dump())
 
 @app.websocket("/ws/execute")
 async def execute_agent(websocket: WebSocket):
@@ -44,27 +52,29 @@ async def execute_agent(websocket: WebSocket):
         data = await websocket.receive_json()
         agent = Agent(**data['agent'])
         query = data['query']
-        
         # Initialize conversation with system prompt and query
         messages = [
             {"role": "system", "content": agent.systemPrompt},
             {"role": "user", "content": query}
         ]
-        
+
+        print(messages)
+
         max_turns = 5  # Prevent infinite loops
         turn = 0
         
         while turn < max_turns:
             # REASONING PHASE
+            print("REASONING PHASE")
             await send_step(websocket, "reasoning", "Analyzing situation and deciding next action...")
-            
-            response = await openai.ChatCompletion.acreate(
+            print("sending to openai")
+            response = await client.chat.completions.create(
                 model="gpt-4",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=500
             )
-            
+
             reasoning = response.choices[0].message.content
             messages.append({"role": "assistant", "content": reasoning})
             await send_step(websocket, "reasoning", reasoning)
