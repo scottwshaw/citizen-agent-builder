@@ -60,7 +60,7 @@ async def execute_agent(websocket: WebSocket):
 
         print(messages)
 
-        max_turns = 5  # Prevent infinite loops
+        max_turns = 2  # Prevent infinite loops
         turn = 0
         
         while turn < max_turns:
@@ -88,20 +88,19 @@ async def execute_agent(websocket: WebSocket):
             try:
                 # Parse the action from reasoning
                 # Expecting format: "ACTION: <tool_name> <parameters>"
-                if "ACTION:" not in reasoning:
+                if "ACTION:" in reasoning:
+                    action_part = reasoning.split("ACTION:")[1].strip()
+                    tool_name = action_part.split()[0]
+                
+                    # Verify tool exists
+                    tool = next((t for t in agent.tools if t.name == tool_name), None)
+                    if not tool:
+                        await send_step(websocket, "observation", f"Tool {tool_name} not found")
+                        break          
+                    await send_step(websocket, "action", f"Executing tool: {tool_name}")
+                else:
                     await send_step(websocket, "observation", "No clear action specified in reasoning")
-                    continue
-                
-                action_part = reasoning.split("ACTION:")[1].strip()
-                tool_name = action_part.split()[0]
-                
-                # Verify tool exists
-                tool = next((t for t in agent.tools if t.name == tool_name), None)
-                if not tool:
-                    await send_step(websocket, "observation", f"Tool {tool_name} not found")
-                    continue
-                
-                await send_step(websocket, "action", f"Executing tool: {tool_name}")
+                    break
                 
                 # OBSERVATION PHASE
                 # For now, simulate tool execution with a placeholder
@@ -116,6 +115,7 @@ async def execute_agent(websocket: WebSocket):
                 await send_step(websocket, "observation", f"Error executing action: {str(e)}")
             
             turn += 1
+            print(f"Turn {turn}")
             
         if turn >= max_turns:
             await send_step(websocket, "observation", "Maximum turns reached, stopping execution")
